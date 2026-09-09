@@ -22,6 +22,7 @@
 #include "stm32f1xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "MPU6050.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -55,6 +56,10 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
+extern UART_HandleTypeDef huart1;
+extern UART_HandleTypeDef huart2;
+extern DMA_HandleTypeDef  hdma_usart1_rx;  /* TODO: declare in main.c if DMA is configured */
+extern DMA_HandleTypeDef  hdma_usart2_rx;  /* TODO: declare in main.c if DMA is configured */
 
 /* USER CODE BEGIN EV */
 
@@ -199,5 +204,81 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /* USER CODE BEGIN 1 */
+
+/**
+  * @brief  EXTI9_5 Interrupt Handler (covers EXTI lines 5–9).
+  *
+  * This handles the MPU-6050 INT pin (PB8 = EXTI8, in EXTI9_5 group).
+  * HAL_GPIO_EXTI_IRQHandler clears the pending bit and calls
+  * HAL_GPIO_EXTI_Callback() which is overridden in main.c to call
+  * MPU6050_Trigger_Wakeup().
+  *
+  * Priority: 0 (highest) — this interrupt wakes the MCU from Stop Mode.
+  * See MX_GPIO_Init() in main.c for NVIC configuration.
+  */
+void EXTI9_5_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI9_5_IRQn 0 */
+
+  /* USER CODE END EXTI9_5_IRQn 0 */
+  HAL_GPIO_EXTI_IRQHandler(MPU_INT_Pin);
+  /* USER CODE BEGIN EXTI9_5_IRQn 1 */
+
+  /* USER CODE END EXTI9_5_IRQn 1 */
+}
+
+/**
+  * @brief  USART1 (A7670C cellular modem) interrupt handler.
+  *
+  * Required for HAL_UARTEx_ReceiveToIdle_DMA idle-line detection.
+  * HAL_UART_IRQHandler processes the IDLE line flag and fires
+  * HAL_UARTEx_RxEventCallback() with the received byte count.
+  *
+  * TODO: If using DMA for USART1 RX, also add DMA1_Channel5_IRQHandler
+  *       (USART1 RX on DMA1 Channel 5 for STM32F103):
+  *
+  *   void DMA1_Channel5_IRQHandler(void) {
+  *       HAL_DMA_IRQHandler(&hdma_usart1_rx);
+  *   }
+  *
+  * Priority: lowest (per design spec interrupt hierarchy).
+  */
+void USART1_IRQHandler(void)
+{
+  /* USER CODE BEGIN USART1_IRQn 0 */
+
+  /* USER CODE END USART1_IRQn 0 */
+  HAL_UART_IRQHandler(&huart1);
+  /* USER CODE BEGIN USART1_IRQn 1 */
+
+  /* USER CODE END USART1_IRQn 1 */
+}
+
+/**
+  * @brief  USART2 (NEO-6M GPS) interrupt handler.
+  *
+  * Required for HAL_UARTEx_ReceiveToIdle_DMA idle-line detection on the GPS UART.
+  * HAL_UART_IRQHandler processes the IDLE line flag and fires
+  * HAL_UARTEx_RxEventCallback() with the received byte count (NMEA sentence size).
+  *
+  * Priority: medium (per design spec: NEO-6M UART medium priority).
+  *
+  * TODO: If using DMA for USART2 RX, also add DMA1_Channel6_IRQHandler
+  *       (USART2 RX on DMA1 Channel 6 for STM32F103):
+  *
+  *   void DMA1_Channel6_IRQHandler(void) {
+  *       HAL_DMA_IRQHandler(&hdma_usart2_rx);
+  *   }
+  */
+void USART2_IRQHandler(void)
+{
+  /* USER CODE BEGIN USART2_IRQn 0 */
+
+  /* USER CODE END USART2_IRQn 0 */
+  HAL_UART_IRQHandler(&huart2);
+  /* USER CODE BEGIN USART2_IRQn 1 */
+
+  /* USER CODE END USART2_IRQn 1 */
+}
 
 /* USER CODE END 1 */
