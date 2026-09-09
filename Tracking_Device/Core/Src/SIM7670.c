@@ -8,7 +8,7 @@
  * ============================================================================ */
 
 #define SIM_DMA_BUFFER_SIZE     256     /**< UART DMA receive buffer size                      */
-#define TX_PAYLOAD_SIZE         200     /**< HTTP URL string buffer (must fit full URL + AT cmd) */
+#define TX_PAYLOAD_SIZE         400     /**< HTTP URL string buffer (must fit full URL + AT cmd + batched coords) */
 
 /* ---- Timing constants (from hardware spec) ------------------------------- */
 #define BOOT_TIMEOUT_MS         11200UL /**< Ton(uart): time from PWRKEY pulse to UART ready    */
@@ -31,10 +31,10 @@
 /* ---- HTTP GET endpoint --------------------------------------------------- */
 /* TODO: Replace with your actual server URL.
  *       The lat/lon fields use raw NMEA format (ddmm.mmmm).
- *       Consider converting to decimal degrees server-side or in SIM7670_Send_Data().
+ *       Consider converting to decimal degrees server-side or in SIM7670_Send_Data_Batch().
  */
-#define SERVER_URL_FORMAT \
-    "AT+HTTPPARA=\"URL\",\"http://myserver.com/track?t=%s&lat=%s%c&lon=%s%c\"\r\n"
+#define SERVER_URL_BASE "AT+HTTPPARA=\"URL\",\"http://myserver.com/track?batch="
+#define SERVER_URL_END  "\"\r\n"
 
 /* ---- Module-private state ------------------------------------------------ */
 static UART_HandleTypeDef       *sim_huart;
@@ -245,13 +245,11 @@ void SIM7670_WakeFromSleep(void) {
     wait_timeout = DTR_WAKE_SETTLE_MS; /* 50 ms settle before first command */
 }
 
-void SIM7670_Send_Data(const char *time, const char *lat, char lat_dir,
-                        const char *lon, char lon_dir) {
+void SIM7670_Send_Data(const char *payload_string) {
+    if (payload_string == NULL || payload_string[0] == '\0') return;
 
     /* Build the AT+HTTPPARA URL command string */
-    snprintf(tx_payload, sizeof(tx_payload),
-             SERVER_URL_FORMAT,
-             time, lat, lat_dir, lon, lon_dir);
+    snprintf(tx_payload, sizeof(tx_payload), "%s%s%s", SERVER_URL_BASE, payload_string, SERVER_URL_END);
 
     /* Reset the HTTP sub-FSM to start a fresh transaction */
     http_state = HTTP_INIT;

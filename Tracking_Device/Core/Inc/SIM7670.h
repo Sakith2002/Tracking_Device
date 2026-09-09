@@ -125,22 +125,14 @@ void SIM7670_PowerOff(void);
 void SIM7670_WakeFromSleep(void);
 
 /**
- * @brief Trigger an HTTP GET upload of one GPS coordinate tuple.
+ * @brief Trigger an HTTP GET upload of data.
  *
  * Constructs the AT+HTTPPARA URL string and transitions to SIM_ACTIVE_TX.
  * If the modem is in SIM_LIGHT_SLEEP, SIM7670_WakeFromSleep() is called first.
  *
- * The function does NOT block. SIM7670_Process() will advance the HTTP
- * sub-FSM on subsequent main loop iterations.
- *
- * @param time     UTC time string from GPS_Data_t.time (e.g. "123519.00")
- * @param lat      Latitude string from GPS_Data_t.latitude (e.g. "4807.0380")
- * @param lat_dir  'N' or 'S'
- * @param lon      Longitude string from GPS_Data_t.longitude (e.g. "01131.0000")
- * @param lon_dir  'E' or 'W'
+ * @param payload_string  Null-terminated string containing the formatted data to append to the URL.
  */
-void SIM7670_Send_Data(const char* time, const char* lat, char lat_dir,
-                       const char* lon, char lon_dir);
+void SIM7670_Send_Data(const char *payload_string);
 
 /**
  * @brief Notify the SIM module of a completed UART DMA receive event.

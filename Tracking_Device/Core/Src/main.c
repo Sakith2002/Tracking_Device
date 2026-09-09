@@ -87,6 +87,15 @@ static uint32_t active_tx_timer = 0;
 #define TX_INTERVAL_MS  60000UL
 
 /**
+ * GPS FIFO for 10-second batching.
+ */
+#define FIFO_MAX_SIZE 6
+static GPS_Data_t gps_fifo[FIFO_MAX_SIZE];
+static uint8_t fifo_count = 0;
+static uint32_t active_fifo_timer = 0;
+#define FIFO_INTERVAL_MS 10000UL
+
+/**
  * Flag set by On_SIM_TransmitComplete when we need to enter Stop Mode.
  * The actual Stop Mode entry is deferred to the main loop (never from a callback)
  * to ensure clean stack state and pending interrupt handling.
@@ -203,6 +212,8 @@ static void On_GPS_ValidFix(void) {
         DEBUG_PRINT("SYSTEM: GPS baseline acquired — entering ACTIVE_TRANSIT.\r\n");
         sys_state       = SYS_ACTIVE_TRANSIT;
         active_tx_timer = HAL_GetTick();
+        active_fifo_timer = HAL_GetTick();
+        fifo_count = 0;
     }
 }
 
@@ -365,6 +376,8 @@ int main(void)
 
               sys_state       = SYS_ACTIVE_TRANSIT;
               active_tx_timer = HAL_GetTick(); /* Start 60s transmission timer */
+              active_fifo_timer = HAL_GetTick(); /* Start 10s FIFO timer */
+              fifo_count = 0;
               DEBUG_PRINT("SYSTEM: WAKE_UP complete — entering ACTIVE_TRANSIT.\r\n");
               break;
 
@@ -377,19 +390,39 @@ int main(void)
                * NMEA sentence parses (NEO-6M fires idle-line ISR every ~1s).
                * The SIM is in LIGHT_SLEEP between transmissions. */
 
+              if ((HAL_GetTick() - active_fifo_timer) >= FIFO_INTERVAL_MS) {
+                  active_fifo_timer = HAL_GetTick();
+                  GPS_Data_t *gps_data = GPS_GetLatestData();
+                  if (gps_data->has_fix) {
+                      if (fifo_count < FIFO_MAX_SIZE) {
+                          gps_fifo[fifo_count] = *gps_data;
+                          fifo_count++;
+                      }
+                  }
+              }
+
               if ((HAL_GetTick() - active_tx_timer) >= TX_INTERVAL_MS) {
                   active_tx_timer = HAL_GetTick(); /* Reset 60s timer */
 
-                  GPS_Data_t *gps_data = GPS_GetLatestData();
-                  if (gps_data->has_fix) {
-                      DEBUG_PRINT("SYSTEM: 60s TX — uploading location data.\r\n");
+                  if (fifo_count > 0) {
+                      char batch_str[256] = {0};
+                      char temp[64];
+                      for (uint8_t i = 0; i < fifo_count; i++) {
+                          snprintf(temp, sizeof(temp), "%s,%s%c,%s%c;",
+                                   gps_fifo[i].time, gps_fifo[i].latitude, gps_fifo[i].lat_direction,
+                                   gps_fifo[i].longitude, gps_fifo[i].lon_direction);
+                          if (strlen(batch_str) + strlen(temp) < sizeof(batch_str)) {
+                              strcat(batch_str, temp);
+                          }
+                      }
+                      
+                      DEBUG_PRINT("SYSTEM: 60s TX — uploading %d batched locations.\r\n", fifo_count);
                       /* SIM7670_Send_Data() will wake the modem from light sleep if
                        * needed, then execute the HTTP GET asynchronously. */
-                      SIM7670_Send_Data(gps_data->time,
-                                        gps_data->latitude,  gps_data->lat_direction,
-                                        gps_data->longitude, gps_data->lon_direction);
+                      SIM7670_Send_Data(batch_str);
+                      fifo_count = 0; /* Reset batch */
                   } else {
-                      DEBUG_PRINT("SYSTEM: 60s TX skipped — no GPS fix.\r\n");
+                      DEBUG_PRINT("SYSTEM: 60s TX skipped — no valid GPS data in batch.\r\n");
                   }
               }
 
@@ -409,12 +442,32 @@ int main(void)
                * SIM is executing the HTTP transaction. On_SIM_TransmitComplete() will
                * see sys_state == SYS_POWER_OFF and set enter_stop_mode_pending. */
               {
-                  GPS_Data_t *gps_data = GPS_GetLatestData();
                   DEBUG_PRINT("SYSTEM: SLEEP — sending final parked location.\r\n");
                   sys_state = SYS_POWER_OFF; /* Guard before TX to prevent re-entry */
-                  SIM7670_Send_Data(gps_data->time,
-                                    gps_data->latitude,  gps_data->lat_direction,
-                                    gps_data->longitude, gps_data->lon_direction);
+                  
+                  GPS_Data_t *gps_data = GPS_GetLatestData();
+                  if (gps_data->has_fix && fifo_count < FIFO_MAX_SIZE) {
+                      gps_fifo[fifo_count] = *gps_data;
+                      fifo_count++;
+                  }
+                  
+                  if (fifo_count > 0) {
+                      char batch_str[256] = {0};
+                      char temp[64];
+                      for (uint8_t i = 0; i < fifo_count; i++) {
+                          snprintf(temp, sizeof(temp), "%s,%s%c,%s%c;",
+                                   gps_fifo[i].time, gps_fifo[i].latitude, gps_fifo[i].lat_direction,
+                                   gps_fifo[i].longitude, gps_fifo[i].lon_direction);
+                          if (strlen(batch_str) + strlen(temp) < sizeof(batch_str)) {
+                              strcat(batch_str, temp);
+                          }
+                      }
+                      SIM7670_Send_Data(batch_str);
+                      fifo_count = 0;
+                  } else {
+                      /* If somehow there's no data to send, go straight to sleep */
+                      enter_stop_mode_pending = true;
+                  }
               }
               break;
 
