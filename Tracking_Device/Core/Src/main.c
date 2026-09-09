@@ -22,6 +22,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "MPU6050.h"
+#include "SIM7670.h"
+#include <stdio.h>
 #include <string.h>
 /* USER CODE END Includes */
 
@@ -49,7 +51,9 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 volatile uint8_t motion_detected = 0;
 float Ax, Ay, Az, Gx, Gy, Gz;
-char gps_buffer[100]
+char gps_buffer[100];
+char sms_buffer[160];
+uint8_t wake_up_flag = 0; // Flag to indicate if the device has woken up from sleep
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -59,7 +63,11 @@ static void MX_I2C1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    if (GPIO_Pin == GPIO_PIN_8) {
+        motion_detected = 1;
+    }
+}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -99,8 +107,11 @@ int main(void)
   MX_I2C1_Init();
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
-  /* USER CODE BEGIN 2 */
 
+  /* USER CODE BEGIN 2 */
+  MPU6050_Init(&hi2c1);
+  MPU6050_Config_Interrupt(&hi2c1);
+  SIM7670_Init(&huart1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -108,41 +119,45 @@ int main(void)
   while (1)
   {
     if (motion_detected) {
-            // Task 1: Indicators
-            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET); 
-            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET); 
-            HAL_Delay(100);
-            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+      if (!wake_up_flag) {
 
-            // Task 2: Calculation
-            MPU6050_Read_Accel(&hi2c1, &Ax, &Ay, &Az);
-            MPU6050_Read_Gyro(&hi2c1, &Gx, &Gy, &Gz);
-            // [KALMAN FILTER COMMENT]
+        SIM7670_WakeUp(&huart1);
+        wake_up_flag = 1; // Set the flag to indicate that the device has woken up
+      }
 
-            // Task 3: NEO6M GPS
-            HAL_UART_Receive(&huart2, (uint8_t*)gps_buffer, 90, 1000);
+      // Task 1: Indicators
+      // HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET); 
+      // HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET); 
+      // HAL_Delay(100);
+      // HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
 
-            // Task 4: SIM900L Send
-            HAL_UART_Transmit(&huart1, (uint8_t*)"AT\r\n", 4, 100);
+      // Task 2: Calculation
+      MPU6050_Read_Accel(&hi2c1, &Ax, &Ay, &Az);
+      MPU6050_Read_Gyro(&hi2c1, &Gx, &Gy, &Gz);
+      // [KALMAN FILTER COMMENT]
 
-            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET); 
-            motion_detected = 0;
-        } else {
-            // No movement: Sleep
-            HAL_PWR_EnterSTOPMode(PWR_MAINREGULATOR_ON, PWR_STOPENTRY_WFI);
-            SystemClock_Config(); 
-        }
+      // Task 3: NEO6M GPS
+      HAL_UART_Receive(&huart2, (uint8_t*)gps_buffer, 90, 1000);
+
+      // Task 4: SIM7670 Send
+      HAL_UART_Transmit(&huart1, (uint8_t*)"AT\r\n", 4, 100);
+
+      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET); 
+      motion_detected = 0;
+    } else {
+      if (wake_up_flag) {
+        SIM7670_Sleep(&huart1);
+        wake_up_flag = 0; // Reset the flag to indicate that the device has gone to sleep
+      }
+        // No movement: Sleep
+        HAL_PWR_EnterSTOPMode(PWR_MAINREGULATOR_ON, PWR_STOPENTRY_WFI);
+        SystemClock_Config(); 
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
-}
-
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-    if (GPIO_Pin == GPIO_PIN_8) {
-        motion_detected = 1;
-    }
 }
 
 /**
