@@ -1,0 +1,3 @@
+C:/Users/Rakindu/Documents/semester 7/Embedded/fleet_tracker/Core/Src/i2c.c:30:6:MX_I2C1_Init	8	static
+C:/Users/Rakindu/Documents/semester 7/Embedded/fleet_tracker/Core/Src/i2c.c:59:6:HAL_I2C_MspInit	40	static
+C:/Users/Rakindu/Documents/semester 7/Embedded/fleet_tracker/Core/Src/i2c.c:87:6:HAL_I2C_MspDeInit	16	static
